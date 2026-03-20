@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
-import 'catalogue_screen.dart';
+import '../benevole/catalogue_screen.dart';
+import '../admin/stats_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,6 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLogin = true;
   bool _isLoading = false;
   String _error = '';
+  String _roleSelectionne = 'benevole';
 
   Future<void> _submit() async {
     setState(() { _isLoading = true; _error = ''; });
@@ -31,12 +33,17 @@ class _LoginScreenState extends State<LoginScreen> {
           _emailCtrl.text.trim(),
           _passCtrl.text.trim(),
           _nomCtrl.text.trim(),
-          'benevole',
+          _roleSelectionne,
         );
       }
       if (mounted) {
-        Navigator.pushReplacement(context,
-          MaterialPageRoute(builder: (_) => const CatalogueScreen()));
+        if (role == 'admin') {
+          Navigator.pushReplacement(context,
+            MaterialPageRoute(builder: (_) => const StatsScreen()));
+        } else {
+          Navigator.pushReplacement(context,
+            MaterialPageRoute(builder: (_) => const CatalogueScreen()));
+        }
       }
     } catch (e) {
       setState(() { _error = 'Erreur : vérifiez vos informations'; });
@@ -49,11 +56,12 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              const SizedBox(height: 60),
               Text('OpenMinds',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                   color: Colors.teal, fontWeight: FontWeight.bold)),
@@ -61,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Text('Formation citoyenne',
                 style: Theme.of(context).textTheme.bodyMedium),
               const SizedBox(height: 40),
-              if (!_isLogin)
+              if (!_isLogin) ...[
                 TextField(
                   controller: _nomCtrl,
                   decoration: const InputDecoration(
@@ -70,7 +78,29 @@ class _LoginScreenState extends State<LoginScreen> {
                     prefixIcon: Icon(Icons.person),
                   ),
                 ),
-              if (!_isLogin) const SizedBox(height: 16),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: _roleSelectionne,
+                  decoration: const InputDecoration(
+                    labelText: 'Rôle',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.badge),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'benevole',
+                      child: Text('Bénévole')),
+                    DropdownMenuItem(
+                      value: 'formateur',
+                      child: Text('Formateur')),
+                    DropdownMenuItem(
+                      value: 'admin',
+                      child: Text('Administrateur')),
+                  ],
+                  onChanged: (v) => setState(() => _roleSelectionne = v!),
+                ),
+                const SizedBox(height: 16),
+              ],
               TextField(
                 controller: _emailCtrl,
                 decoration: const InputDecoration(
@@ -91,7 +121,8 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 8),
               if (_error.isNotEmpty)
-                Text(_error, style: const TextStyle(color: Colors.red)),
+                Text(_error,
+                  style: const TextStyle(color: Colors.red)),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -108,7 +139,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               TextButton(
-                onPressed: () => setState(() => _isLogin = !_isLogin),
+                onPressed: () => setState(() {
+                  _isLogin = !_isLogin;
+                  _error = '';
+                }),
                 child: Text(_isLogin
                   ? 'Pas de compte ? S\'inscrire'
                   : 'Déjà un compte ? Se connecter'),

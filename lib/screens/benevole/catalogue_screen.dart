@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
 import '../benevole/login_screen.dart';
 import 'formation_detail_screen.dart';
+import 'dashboard_screen.dart';
 
 class CatalogueScreen extends StatelessWidget {
   const CatalogueScreen({super.key});
@@ -18,6 +19,11 @@ class CatalogueScreen extends StatelessWidget {
         foregroundColor: Colors.white,
         toolbarHeight: kToolbarHeight,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const DashboardScreen())),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {

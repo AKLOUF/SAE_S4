@@ -85,7 +85,7 @@ class _QuizScreenState extends State<QuizScreen> {
         .doc(uid)
         .collection('quiz_results')
         .add({
-      'formation_id': widget.formationId,
+      'titre': widget.titrFormation,
       'score': pourcentage,
       'date': FieldValue.serverTimestamp(),
     });
