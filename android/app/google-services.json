@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "504707262443",
+    "project_id": "sae-s4-757c8",
+    "storage_bucket": "sae-s4-757c8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:504707262443:android:ff70fa0615b944815a5bae",
+        "android_client_info": {
+          "package_name": "com.example.openminds"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCyIgJw8vQ2BRZB8vyJfWBgGesimk-3WHA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
