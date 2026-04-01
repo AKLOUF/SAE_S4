@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../services/certification_service.dart';
 
 class QuizScreen extends StatefulWidget {
   final String formationId;
@@ -57,6 +58,7 @@ class _QuizScreenState extends State<QuizScreen>
   int _score = 0;
   bool _quizTermine = false;
   bool _reponseValidee = false;
+  String? _certificationObtenue; // ← NOUVEAU
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
 
@@ -64,9 +66,9 @@ class _QuizScreenState extends State<QuizScreen>
   void initState() {
     super.initState();
     _animController = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 400));
+        vsync: this, duration: const Duration(milliseconds: 400));
     _fadeAnim = CurvedAnimation(
-      parent: _animController, curve: Curves.easeIn);
+        parent: _animController, curve: Curves.easeIn);
     _animController.forward();
   }
 
@@ -105,32 +107,79 @@ class _QuizScreenState extends State<QuizScreen>
     }
   }
 
+  // ── Sauvegarde + vérification certification ──────────────────────
   Future<void> _sauvegarderResultat() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    double pourcentage = (_score / _questions.length) * 100;
-    await FirebaseFirestore.instance
-        .collection('users').doc(uid)
-        .collection('quiz_results').add({
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final double pourcentage = (_score / _questions.length) * 100;
+    final batch = FirebaseFirestore.instance.batch();
+
+    // 1. Sauvegarde le résultat du quiz
+    final resultRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('quiz_results')
+        .doc();
+
+    batch.set(resultRef, {
+      'formation_id': widget.formationId,
       'titre': widget.titrFormation,
       'score': pourcentage,
       'date': FieldValue.serverTimestamp(),
     });
+
+    // 2. Badge si score >= 70%
     if (pourcentage >= 70) {
-      await FirebaseFirestore.instance
-          .collection('users').doc(uid)
-          .collection('badges').add({
+      final badgeRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('badges')
+          .doc(widget.formationId);
+
+      batch.set(badgeRef, {
         'formation_id': widget.formationId,
         'titre': widget.titrFormation,
         'date_obtention': FieldValue.serverTimestamp(),
       });
     }
+
+    await batch.commit();
+
+    // 3. Vérifie si certification débloquée
+    if (pourcentage >= 70) {
+      try {
+        final formationDoc = await FirebaseFirestore.instance
+            .collection('Formations')
+            .doc(widget.formationId)
+            .get();
+
+        if (formationDoc.exists) {
+          final thematique =
+              formationDoc.data()?['thematique'] ?? 'inclusion';
+
+          final certifService = CertificationService();
+          final certifObtenue =
+          await certifService.verifierCertification(
+            uid: user.uid,
+            thematique: thematique,
+          );
+
+          if (certifObtenue && mounted) {
+            setState(() => _certificationObtenue = thematique);
+          }
+        }
+      } catch (e) {
+        debugPrint('Erreur vérification certification : $e');
+      }
+    }
   }
 
+  // ── Couleurs des options ──────────────────────────────────────────
   Color _optionColor(int index) {
     if (!_reponseValidee) {
       return _reponseSelectionnee == index
-          ? const Color(0xFF00796B).withOpacity(0.1)
+          ? const Color(0xFF00796B).withValues(alpha: 0.1)
           : Colors.white;
     }
     if (index == _questions[_questionActuelle]['reponse_correcte']) {
@@ -164,6 +213,7 @@ class _QuizScreenState extends State<QuizScreen>
     return null;
   }
 
+  // ── Build principal ───────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     if (_quizTermine) return _buildResultat();
@@ -178,23 +228,23 @@ class _QuizScreenState extends State<QuizScreen>
         foregroundColor: Colors.white,
         elevation: 0,
         title: Text(widget.titrFormation,
-          style: const TextStyle(fontSize: 16)),
+            style: const TextStyle(fontSize: 16)),
         leading: IconButton(
           icon: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(Icons.arrow_back,
-              color: Colors.white, size: 20),
+                color: Colors.white, size: 20),
           ),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: Column(
         children: [
-          // Barre de progression
+          // Header progression
           Container(
             color: const Color(0xFF00796B),
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -204,33 +254,25 @@ class _QuizScreenState extends State<QuizScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Question ${_questionActuelle + 1} sur ${_questions.length}',
-                      style: const TextStyle(
-                        color: Colors.white70, fontSize: 13)),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '$_score / ${_questions.length}',
+                        'Question ${_questionActuelle + 1} / ${_questions.length}',
                         style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13)),
-                    ),
+                            color: Colors.white70, fontSize: 13)),
+                    Text('Score: $_score',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: LinearProgressIndicator(
                     value: progress,
-                    backgroundColor: Colors.white.withOpacity(0.3),
-                    valueColor: const AlwaysStoppedAnimation(Colors.white),
-                    minHeight: 8,
+                    backgroundColor:
+                    Colors.white.withValues(alpha: 0.3),
+                    valueColor:
+                    const AlwaysStoppedAnimation(Colors.white),
+                    minHeight: 6,
                   ),
                 ),
               ],
@@ -245,90 +287,16 @@ class _QuizScreenState extends State<QuizScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 8),
-                    // Question
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 2)),
-                        ],
-                      ),
-                      child: Text(question['enonce'],
+                    Text(question['enonce'],
                         style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1A1A2E),
-                          height: 1.4)),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Options
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A1A2E),
+                            height: 1.4)),
+                    const SizedBox(height: 24),
                     ...List.generate(
                       (question['options'] as List).length,
-                      (i) => GestureDetector(
-                        onTap: () => _repondre(i),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: _optionColor(i),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: _optionBorderColor(i), width: 2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.03),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2)),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 32, height: 32,
-                                decoration: BoxDecoration(
-                                  color: _reponseSelectionnee == i && !_reponseValidee
-                                      ? const Color(0xFF00796B)
-                                      : Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    String.fromCharCode(65 + i),
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: _reponseSelectionnee == i && !_reponseValidee
-                                          ? Colors.white
-                                          : Colors.grey.shade500,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(question['options'][i],
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    color: _reponseSelectionnee == i
-                                        ? const Color(0xFF1A1A2E)
-                                        : Colors.grey.shade700,
-                                    fontWeight: _reponseSelectionnee == i
-                                        ? FontWeight.w600
-                                        : FontWeight.normal)),
-                              ),
-                              if (_optionTrailing(i) != null)
-                                _optionTrailing(i)!,
-                            ],
-                          ),
-                        ),
-                      ),
+                          (i) => _buildOption(i, question['options'][i]),
                     ),
                   ],
                 ),
@@ -336,34 +304,34 @@ class _QuizScreenState extends State<QuizScreen>
             ),
           ),
 
-          // Bouton valider / suivant
           Padding(
             padding: const EdgeInsets.all(20),
             child: SizedBox(
               width: double.infinity,
-              height: 54,
+              height: 56,
               child: ElevatedButton(
                 onPressed: _reponseSelectionnee == null
                     ? null
                     : _reponseValidee
-                        ? _questionSuivante
-                        : _valider,
+                    ? _questionSuivante
+                    : _valider,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF00796B),
                   foregroundColor: Colors.white,
                   disabledBackgroundColor: Colors.grey.shade200,
-                  elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
+                      borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
                 ),
                 child: Text(
                   _reponseValidee
                       ? (_questionActuelle < _questions.length - 1
-                          ? 'Question suivante →'
-                          : 'Voir le résultat')
-                      : 'Valider ma réponse',
+                      ? 'Suivant'
+                      : 'Terminer')
+                      : 'Valider',
                   style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold)),
+                      fontSize: 16, fontWeight: FontWeight.bold),
+                ),
               ),
             ),
           ),
@@ -372,128 +340,175 @@ class _QuizScreenState extends State<QuizScreen>
     );
   }
 
+  Widget _buildOption(int i, String texte) {
+    return GestureDetector(
+      onTap: () => _repondre(i),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _optionColor(i),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _optionBorderColor(i), width: 2),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: _reponseSelectionnee == i
+                    ? const Color(0xFF00796B)
+                    : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Text(String.fromCharCode(65 + i),
+                    style: TextStyle(
+                        color: _reponseSelectionnee == i
+                            ? Colors.white
+                            : Colors.grey,
+                        fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+                child: Text(texte,
+                    style: const TextStyle(fontSize: 16))),
+            if (_optionTrailing(i) != null) _optionTrailing(i)!,
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Écran résultat ────────────────────────────────────────────────
   Widget _buildResultat() {
-    double pourcentage = (_score / _questions.length) * 100;
-    bool reussi = pourcentage >= 70;
+    final double pourcentage = (_score / _questions.length) * 100;
+    final bool reussi = pourcentage >= 70;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFB),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+      backgroundColor: Colors.white,
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Spacer(),
-              // Icône résultat
-              Container(
-                width: 100, height: 100,
-                decoration: BoxDecoration(
-                  color: reussi
-                      ? Colors.amber.shade50
-                      : Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Icon(
-                  reussi ? Icons.emoji_events : Icons.refresh,
-                  size: 50,
-                  color: reussi ? Colors.amber : Colors.red.shade300,
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                reussi ? 'Bravo !' : 'Continuez vos efforts !',
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1A1A2E)),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                reussi
-                    ? 'Vous avez validé cette formation avec succès.'
-                    : 'Relisez le contenu et réessayez.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey.shade600, fontSize: 15)),
-              const SizedBox(height: 32),
 
-              // Score
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 12, offset: const Offset(0, 4)),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      '${pourcentage.toStringAsFixed(0)}%',
-                      style: TextStyle(
-                        fontSize: 52,
-                        fontWeight: FontWeight.bold,
-                        color: reussi
-                            ? const Color(0xFF00796B)
-                            : Colors.red.shade400)),
-                    Text(
-                      '$_score bonne${_score > 1 ? 's' : ''} réponse${_score > 1 ? 's' : ''} sur ${_questions.length}',
-                      style: TextStyle(
-                        color: Colors.grey.shade600, fontSize: 15)),
-                    const SizedBox(height: 16),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: LinearProgressIndicator(
-                        value: pourcentage / 100,
-                        backgroundColor: Colors.grey.shade200,
-                        valueColor: AlwaysStoppedAnimation(
-                          reussi ? const Color(0xFF00796B) : Colors.red.shade300),
-                        minHeight: 10,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Badge obtenu
-              if (reussi)
+              // ── Bannière certification si obtenue ─────────────
+              if (_certificationObtenue != null) ...[
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.amber.shade200)),
-                  child: Row(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.amber.withOpacity(0.4),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
                     children: [
-                      const Icon(Icons.emoji_events,
-                        color: Colors.amber, size: 28),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Badge obtenu !',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                                color: Color(0xFF1A1A2E))),
-                            Text(widget.titrFormation,
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 13)),
-                          ],
+                      const Icon(Icons.workspace_premium,
+                          color: Colors.white, size: 64),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '🎉 Certification obtenue !',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Parcours ${_certificationObtenue![0].toUpperCase()}${_certificationObtenue!.substring(1)} complété !',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15),
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.25),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          '🏆 Badge OpenMinds débloqué !',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 28),
+              ],
 
-              const Spacer(),
+              // ── Résultat du quiz ──────────────────────────────
+              Icon(
+                reussi
+                    ? Icons.stars
+                    : Icons.sentiment_dissatisfied,
+                size: 80,
+                color: reussi ? Colors.amber : Colors.orange,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                reussi ? 'Félicitations !' : 'Dommage...',
+                style: const TextStyle(
+                    fontSize: 28, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Score : ${pourcentage.toStringAsFixed(0)}%',
+                style: TextStyle(
+                    fontSize: 18, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 8),
 
+              // ── Message selon résultat ────────────────────────
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: reussi
+                      ? Colors.green.shade50
+                      : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  reussi
+                      ? '✅ Quiz réussi ! Badge obtenu.'
+                      : '❌ Score insuffisant. Il faut 70% minimum.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: reussi
+                        ? Colors.green.shade700
+                        : Colors.orange.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 40),
+
+              // ── Bouton retour ─────────────────────────────────
               SizedBox(
                 width: double.infinity,
                 height: 54,
@@ -502,15 +517,48 @@ class _QuizScreenState extends State<QuizScreen>
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF00796B),
                     foregroundColor: Colors.white,
-                    elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                        borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
                   ),
                   child: const Text('Retour aux formations',
-                    style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold)),
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold)),
                 ),
               ),
+
+              // ── Bouton voir certifications si obtenue ─────────
+              if (_certificationObtenue != null) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // Navigation vers ParcoursScreen
+                      Navigator.pushNamed(
+                          context, '/benevole/parcours');
+                    },
+                    icon: const Icon(Icons.workspace_premium,
+                        color: Color(0xFF00796B)),
+                    label: const Text(
+                      'Voir mes certifications',
+                      style: TextStyle(
+                          color: Color(0xFF00796B),
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(
+                          color: Color(0xFF00796B), width: 2),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

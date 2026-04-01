@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:openminds/screens/formateur/sessions_screen.dart';
 import '../../services/auth_service.dart';
 import '../benevole/catalogue_screen.dart';
 import '../admin/stats_screen.dart';
-import '../formateur/participants_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,6 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passCtrl = TextEditingController();
   final _nomCtrl = TextEditingController();
   final _authService = AuthService();
+
   bool _isLogin = true;
   bool _isLoading = false;
   bool _obscurePass = true;
@@ -22,7 +23,25 @@ class _LoginScreenState extends State<LoginScreen> {
   String _roleSelectionne = 'benevole';
 
   Future<void> _submit() async {
+    // ── Fix 1 : validation complète avant envoi ──────────
+    if (_emailCtrl.text.trim().isEmpty || _passCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Veuillez remplir tous les champs');
+      return;
+    }
+    // ── Fix 2 : valider le nom et le mot de passe à l'inscription
+    if (!_isLogin) {
+      if (_nomCtrl.text.trim().isEmpty) {
+        setState(() => _error = 'Veuillez saisir votre nom complet');
+        return;
+      }
+      if (_passCtrl.text.trim().length < 6) {
+        setState(() => _error = 'Le mot de passe doit contenir au moins 6 caractères');
+        return;
+      }
+    }
+
     setState(() { _isLoading = true; _error = ''; });
+
     try {
       String role;
       if (_isLogin) {
@@ -38,23 +57,38 @@ class _LoginScreenState extends State<LoginScreen> {
           _roleSelectionne,
         );
       }
+
       if (mounted) {
-        if (role == 'admin') {
-          Navigator.pushReplacement(context,
-            MaterialPageRoute(builder: (_) => const StatsScreen()));
-        } else if (role == 'formateur') {
-          Navigator.pushReplacement(context,
-            MaterialPageRoute(builder: (_) => const ParticipantsScreen()));
-        } else {
-          Navigator.pushReplacement(context,
-            MaterialPageRoute(builder: (_) => const CatalogueScreen()));
+        Widget nextScreen;
+        switch (role) {
+          case 'admin':
+            nextScreen = const StatsScreen();
+            break;
+          case 'formateur':
+            nextScreen = const SessionsScreen();
+            break;
+          default:
+            nextScreen = const CatalogueScreen();
         }
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => nextScreen),
+        );
       }
     } catch (e) {
-      setState(() { _error = 'Email ou mot de passe incorrect'; });
+      // ── Fix 3 : afficher le vrai message d'erreur de AuthService ──
+      setState(() => _error = e.toString());
     } finally {
-      setState(() { _isLoading = false; });
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    _nomCtrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -71,19 +105,16 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Header avec logo
+              // Header avec logo custom
               Expanded(
                 flex: 2,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Logo
                     SizedBox(
                       width: 90,
                       height: 90,
-                      child: CustomPaint(
-                      painter: _LogoPainter(),
-                      ),
+                      child: CustomPaint(painter: _LogoPainter()),
                     ),
                     const SizedBox(height: 20),
                     const Text(
@@ -95,30 +126,27 @@ class _LoginScreenState extends State<LoginScreen> {
                         letterSpacing: 1.5,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 4),
+                          horizontal: 16, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: const Text(
                         'Formation citoyenne',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.white70,
-                          letterSpacing: 1,
-                        ),
+                        style:
+                        TextStyle(fontSize: 14, color: Colors.white70),
                       ),
                     ),
                   ],
                 ),
               ),
 
-              // Formulaire
+              // Formulaire blanc arrondi
               Expanded(
-                flex: 3,
+                flex: 4,
                 child: Container(
                   decoration: const BoxDecoration(
                     color: Colors.white,
@@ -132,7 +160,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const SizedBox(height: 8),
                         Text(
                           _isLogin ? 'Connexion' : 'Créer un compte',
                           style: const TextStyle(
@@ -144,11 +171,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 4),
                         Text(
                           _isLogin
-                            ? 'Bienvenue ! Connectez-vous pour continuer.'
-                            : 'Rejoignez la communauté OpenMinds.',
+                              ? 'Bienvenue ! Connectez-vous pour continuer.'
+                              : 'Rejoignez la communauté OpenMinds.',
                           style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey.shade600),
+                              fontSize: 13, color: Colors.grey.shade600),
                         ),
                         const SizedBox(height: 24),
 
@@ -178,44 +204,45 @@ class _LoginScreenState extends State<LoginScreen> {
                           suffixIcon: IconButton(
                             icon: Icon(
                               _obscurePass
-                                ? Icons.visibility_off_outlined
-                                : Icons.visibility_outlined,
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
                               color: Colors.grey,
                             ),
                             onPressed: () => setState(
-                              () => _obscurePass = !_obscurePass),
+                                    () => _obscurePass = !_obscurePass),
                           ),
                         ),
 
                         if (_error.isNotEmpty) ...[
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 16),
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: Colors.red.shade50,
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.red.shade200),
+                              border:
+                              Border.all(color: Colors.red.shade200),
                             ),
                             child: Row(
                               children: [
                                 Icon(Icons.error_outline,
-                                  color: Colors.red.shade400, size: 18),
+                                    color: Colors.red.shade400, size: 18),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(_error,
-                                    style: TextStyle(
-                                      color: Colors.red.shade600,
-                                      fontSize: 13)),
+                                      style: TextStyle(
+                                          color: Colors.red.shade600,
+                                          fontSize: 13)),
                                 ),
                               ],
                             ),
                           ),
                         ],
 
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 28),
                         SizedBox(
                           width: double.infinity,
-                          height: 52,
+                          height: 54,
                           child: ElevatedButton(
                             onPressed: _isLoading ? null : _submit,
                             style: ElevatedButton.styleFrom(
@@ -223,19 +250,19 @@ class _LoginScreenState extends State<LoginScreen> {
                               foregroundColor: Colors.white,
                               elevation: 0,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
+                                  borderRadius: BorderRadius.circular(14)),
                             ),
                             child: _isLoading
-                              ? const SizedBox(
-                                  width: 24, height: 24,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white, strokeWidth: 2.5))
-                              : Text(
-                                  _isLogin ? 'Se connecter' : "S'inscrire",
-                                  style: const TextStyle(
+                                ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2))
+                                : Text(
+                                _isLogin ? 'Se connecter' : "S'inscrire",
+                                style: const TextStyle(
                                     fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5)),
+                                    fontWeight: FontWeight.bold)),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -248,17 +275,20 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: RichText(
                               text: TextSpan(
                                 style: TextStyle(
-                                  color: Colors.grey.shade600, fontSize: 14),
+                                    color: Colors.grey.shade600,
+                                    fontSize: 14),
                                 children: [
                                   TextSpan(
-                                    text: _isLogin
-                                      ? 'Pas de compte ? '
-                                      : 'Déjà un compte ? '),
+                                      text: _isLogin
+                                          ? 'Pas de compte ? '
+                                          : 'Déjà un compte ? '),
                                   TextSpan(
-                                    text: _isLogin ? 'S\'inscrire' : 'Se connecter',
-                                    style: const TextStyle(
-                                      color: Color(0xFF00796B),
-                                      fontWeight: FontWeight.bold)),
+                                      text: _isLogin
+                                          ? "S'inscrire"
+                                          : 'Se connecter',
+                                      style: const TextStyle(
+                                          color: Color(0xFF00796B),
+                                          fontWeight: FontWeight.bold)),
                                 ],
                               ),
                             ),
@@ -290,26 +320,21 @@ class _LoginScreenState extends State<LoginScreen> {
       keyboardType: keyboardType,
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon, color: const Color(0xFF00796B), size: 20),
+        prefixIcon:
+        Icon(icon, color: const Color(0xFF00796B), size: 20),
         suffixIcon: suffixIcon,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(
-            color: Color(0xFF00796B), width: 2),
-        ),
         filled: true,
         fillColor: Colors.grey.shade50,
-        labelStyle: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide:
+            const BorderSide(color: Color(0xFF00796B), width: 2)),
       ),
     );
   }
@@ -318,95 +343,69 @@ class _LoginScreenState extends State<LoginScreen> {
     return DropdownButtonFormField<String>(
       value: _roleSelectionne,
       decoration: InputDecoration(
-        labelText: 'Rôle',
+        labelText: 'Rôle utilisateur',
         prefixIcon: const Icon(Icons.badge_outlined,
-          color: Color(0xFF00796B), size: 20),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(
-            color: Color(0xFF00796B), width: 2),
-        ),
+            color: Color(0xFF00796B), size: 20),
         filled: true,
         fillColor: Colors.grey.shade50,
-        labelStyle: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
       ),
       items: const [
-        DropdownMenuItem(value: 'benevole',
-          child: Text('Bénévole')),
-        DropdownMenuItem(value: 'formateur',
-          child: Text('Formateur')),
-        DropdownMenuItem(value: 'admin',
-          child: Text('Administrateur')),
+        DropdownMenuItem(value: 'benevole', child: Text('Bénévole')),
+        DropdownMenuItem(value: 'formateur', child: Text('Formateur')),
       ],
       onChanged: (v) => setState(() => _roleSelectionne = v!),
     );
   }
 }
+
 class _LogoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final double cx = size.width / 2;
     final double cy = size.height / 2;
+    const Color tealColor = Color(0xFF00796B);
 
-    // Fond blanc arrondi
     final bgPaint = Paint()..color = Colors.white;
-    final bgRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      const Radius.circular(22),
-    );
-    canvas.drawRRect(bgRect, bgPaint);
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(0, 0, size.width, size.height),
+            const Radius.circular(22)),
+        bgPaint);
 
-    // Cercle extérieur teal
     final circlePaint = Paint()
-      ..color = const Color(0xFF00796B)
+      ..color = tealColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.5;
     canvas.drawCircle(Offset(cx, cy), 32, circlePaint);
 
-    // Cercle intérieur rempli
     final innerPaint = Paint()
-      ..color = const Color(0xFF00796B).withOpacity(0.15);
+      ..color = tealColor.withValues(alpha: 0.15);
     canvas.drawCircle(Offset(cx, cy), 22, innerPaint);
 
-    // Lettre O - cercle central
     final centerPaint = Paint()
-      ..color = const Color(0xFF00796B)
+      ..color = tealColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4;
     canvas.drawCircle(Offset(cx, cy), 13, centerPaint);
 
-    // 4 traits rayonnants comme une boussole
     final linePaint = Paint()
-      ..color = const Color(0xFF00796B)
+      ..color = tealColor
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+        Offset(cx, cy - 17), Offset(cx, cy - 26), linePaint);
+    canvas.drawLine(
+        Offset(cx, cy + 17), Offset(cx, cy + 26), linePaint);
+    canvas.drawLine(
+        Offset(cx - 17, cy), Offset(cx - 26, cy), linePaint);
+    canvas.drawLine(
+        Offset(cx + 17, cy), Offset(cx + 26, cy), linePaint);
 
-    // Haut
-    canvas.drawLine(
-      Offset(cx, cy - 17), Offset(cx, cy - 26), linePaint);
-    // Bas
-    canvas.drawLine(
-      Offset(cx, cy + 17), Offset(cx, cy + 26), linePaint);
-    // Gauche
-    canvas.drawLine(
-      Offset(cx - 17, cy), Offset(cx - 26, cy), linePaint);
-    // Droite
-    canvas.drawLine(
-      Offset(cx + 17, cy), Offset(cx + 26, cy), linePaint);
-
-    // Point central
-    final dotPaint = Paint()..color = const Color(0xFF00796B);
-    canvas.drawCircle(Offset(cx, cy), 4, dotPaint);
+    canvas.drawCircle(
+        Offset(cx, cy), 4, Paint()..color = tealColor);
   }
 
   @override
