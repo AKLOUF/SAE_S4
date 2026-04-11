@@ -4,7 +4,7 @@ Application Mobile Cross plateforme Citoyenne
 # Membres de l'équipe	: 
 Aklouf Imaddedine — Lead Developer & Architect ; 
 Ali Ben Akremi — Project Manager & Developer ; 
-Tanim Veer — Flutter Developer & Tests ; 
+Tanim Veer — Flutter Developer et Tests ; 
 Adam Mokadem — Developer & Tests ; 
 Paul Aernout — Developer & Docs ; 
 Yassine Bakhtaoui — Developer & Intégration ; 
